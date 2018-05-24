@@ -18,7 +18,11 @@
 
 ## 举例说明：
 
-* request
+* 为了安全控制，在支持组合接口的上面，加上 ``` @EnableCombineRequest ``` 注解。告诉 Spring 容器，这方法支持放在组合接口中，如果把不支持组合接口放到组合接口中去请求，会
+报``` IllegalArgumentException ```
+
+
+* 请求的 request
 ```json
 [
   {
@@ -33,7 +37,7 @@
 ]
 ```
 
-* response
+* 响应的 response
 
 ```json
 [
@@ -58,6 +62,6 @@
 ]
 ```
 
-## 局限
+## TODO
 
-* 不支持绑定了参数的方法，不支持 validator 参数校验
+* 组合方法支持 @RequestParam 等注解

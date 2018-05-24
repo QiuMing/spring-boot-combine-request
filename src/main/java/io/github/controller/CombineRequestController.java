@@ -1,6 +1,7 @@
 package io.github.controller;
 
 import com.alibaba.fastjson.JSON;
+import io.github.annotion.EnableCombineRequest;
 import io.github.pojo.RequestItem;
 import io.github.pojo.ResponseItem;
 import io.swagger.annotations.Api;
@@ -10,10 +11,8 @@ import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.CollectionUtils;
-import org.springframework.util.DigestUtils;
 import org.springframework.util.ReflectionUtils;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.bind.support.WebBindingInitializer;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
@@ -46,6 +45,8 @@ public class CombineRequestController {
      */
     private static Map<String, HandlerMethod> requestItemHandlerMethodMap = new ConcurrentHashMap<>(8);
 
+    private ThreadLocal<Boolean> supportAllRequestItems = new ThreadLocal<>();
+
     @PostMapping
     public ResponseEntity<List<ResponseItem>> combine(@RequestBody List<RequestItem> requestItems) {
         //获取所有方法处理器
@@ -54,26 +55,50 @@ public class CombineRequestController {
         //此 map 存放当前请求，对应的方法处理器
         Map<RequestItem, HandlerMethod> handlerMethodMap = new HashMap<>(requestItems.size());
 
+        supportAllRequestItems.set(Boolean.TRUE);
         requestItems.forEach(requestItem -> {
             String url = requestItem.getUrl().startsWith("/") ? requestItem.getUrl() : "/" + requestItem.getUrl();
             String strRequestMethod = requestItem.getMethod().toUpperCase();
             RequestMethod requestMethod = RequestMethod.valueOf(strRequestMethod);
             String requestUrlAndMethod = url + strRequestMethod;
 
+
             if (requestItemHandlerMethodMap.get(requestUrlAndMethod) != null) {
+                if(!supportAllRequestItems.get()){
+                    return;
+                }
+
                 handlerMethodMap.put(requestItem, requestItemHandlerMethodMap.get(requestUrlAndMethod));
             } else {
+
                 handlerMethods.forEach((requestMappingInfo, handlerMethod) -> {
+
+                    if(!supportAllRequestItems.get()){
+                        return;
+                    }
+
                     List<String> matchingPatterns = requestMappingInfo.getPatternsCondition().getMatchingPatterns(url);
 
                     Set<RequestMethod> methods = requestMappingInfo.getMethodsCondition().getMethods();
                     if (matchingPatterns.size() > 0 && methods.contains(requestMethod)) {
+
+                        EnableCombineRequest enableCombineRequest = handlerMethod.getMethodAnnotation(EnableCombineRequest.class);
+                        if(enableCombineRequest == null){
+                            log.warn("not support combine request,url:{},method:{}",requestItem.getUrl(),requestItem.getMethod());
+                            supportAllRequestItems.set(Boolean.FALSE);
+
+                        }
+
                         handlerMethodMap.put(requestItem, handlerMethod);
                         requestItemHandlerMethodMap.put(requestUrlAndMethod, handlerMethod);
                     }
                 });
             }
         });
+
+        if(!supportAllRequestItems.get()){
+            throw new IllegalArgumentException("exist not support request");
+        }
 
 
         List<ResponseItem> responseItems = new ArrayList<>(requestItems.size());
