@@ -8,8 +8,12 @@ import io.swagger.annotations.Api;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.DefaultParameterNameDiscoverer;
+import org.springframework.core.GenericTypeResolver;
+import org.springframework.core.MethodParameter;
+import org.springframework.core.annotation.SynthesizingMethodParameter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.ReflectionUtils;
 import org.springframework.web.bind.annotation.*;
@@ -18,7 +22,9 @@ import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import javax.annotation.Resource;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -45,7 +51,7 @@ public class CombineRequestController {
      */
     private static Map<String, HandlerMethod> requestItemHandlerMethodMap = new ConcurrentHashMap<>(8);
 
-    private ThreadLocal<Boolean> supportAllRequestItems = new ThreadLocal<>();
+    private static ThreadLocal<Boolean> supportAllRequestItems = new ThreadLocal<>();
 
     @PostMapping
     public ResponseEntity<List<ResponseItem>> combine(@RequestBody List<RequestItem> requestItems) {
@@ -64,7 +70,7 @@ public class CombineRequestController {
 
 
             if (requestItemHandlerMethodMap.get(requestUrlAndMethod) != null) {
-                if(!supportAllRequestItems.get()){
+                if (!supportAllRequestItems.get()) {
                     return;
                 }
 
@@ -73,7 +79,7 @@ public class CombineRequestController {
 
                 handlerMethods.forEach((requestMappingInfo, handlerMethod) -> {
 
-                    if(!supportAllRequestItems.get()){
+                    if (!supportAllRequestItems.get()) {
                         return;
                     }
 
@@ -83,8 +89,8 @@ public class CombineRequestController {
                     if (matchingPatterns.size() > 0 && methods.contains(requestMethod)) {
 
                         EnableCombineRequest enableCombineRequest = handlerMethod.getMethodAnnotation(EnableCombineRequest.class);
-                        if(enableCombineRequest == null){
-                            log.warn("not support combine request,url:{},method:{}",requestItem.getUrl(),requestItem.getMethod());
+                        if (enableCombineRequest == null) {
+                            log.warn("not support combine request,url:{},method:{}", requestItem.getUrl(), requestItem.getMethod());
                             supportAllRequestItems.set(Boolean.FALSE);
 
                         }
@@ -96,7 +102,7 @@ public class CombineRequestController {
             }
         });
 
-        if(!supportAllRequestItems.get()){
+        if (!supportAllRequestItems.get()) {
             throw new IllegalArgumentException("exist not support request");
         }
 
@@ -121,6 +127,7 @@ public class CombineRequestController {
                 //组装请求参数
                 Object[] args = getArgs(method, requestItem.getParam());
 
+
                 Object result;
                 try {
                     result = ReflectionUtils.invokeMethod(method, object, args);
@@ -130,6 +137,7 @@ public class CombineRequestController {
                     responseItem.setHttpStatus(HttpStatus.BAD_REQUEST.value());
                     return;
                 }
+
                 responseItem.setEntity(result);
                 responseItem.setHttpStatus(HttpStatus.OK.value());
             }
@@ -139,10 +147,14 @@ public class CombineRequestController {
     }
 
 
+    protected String parseDefaultValueAttribute(String value) {
+        return (ValueConstants.DEFAULT_NONE.equals(value) ? null : value);
+    }
+
     /**
      * @param method          处理请求的方法
      * @param requestParamMap 请求参数 Map
-     * @return
+     * @return 组装好顺序的，传给方法的值
      */
     private Object[] getArgs(Method method, Map<String, Object> requestParamMap) {
         DefaultParameterNameDiscoverer defaultParameterNameDiscoverer = new DefaultParameterNameDiscoverer();
@@ -155,14 +167,53 @@ public class CombineRequestController {
         Object[] objects = new Object[]{};
 
         LinkedList<Object> collect = new LinkedList<>();
-        for (String methodParameterName : methodParameterNames) {
-            if (!CollectionUtils.isEmpty(requestParamMap)) {
-                Object param = requestParamMap.get(methodParameterName);
+
+        for (int i = 0; i < methodParameterNames.length; i++) {
+            //方法参数，字面量的名称
+            String methodParameterName = methodParameterNames[i];
+            //方法参数对象
+            MethodParameter methodParam = new SynthesizingMethodParameter(method, i);
+
+            Annotation[] paramAnns = methodParam.getParameterAnnotations();
+            if (paramAnns.length != 0) {
+                Annotation paramAnn = paramAnns[0];
+                if (RequestParam.class.isInstance(paramAnn)) {
+                    RequestParam requestParam = (RequestParam) paramAnn;
+                    String paramName = requestParam.name();
+                    boolean required = requestParam.required();
+                    String defaultValue = parseDefaultValueAttribute(requestParam.defaultValue());
+                    Object param = requestParamMap.get(paramName);
+
+                    if (required) {
+                        Assert.isTrue(param != null || defaultValue != null, paramName + "is require,but not found from request and not default value");
+                    }
+                    defaultValue = param == null ? defaultValue : param.toString();
+                    collect.add(param);
+
+                    log.info("param has RequestParam Annotation,default value:{},get value from request:{}", defaultValue, param.toString());
+                    continue;
+                }
+            }
+
+
+            //没有注解，直接按照字面量尝试取值
+            Object param = requestParamMap.get(methodParameterName);
+            if (param != null) {
                 collect.add(param);
             } else {
                 log.info("not found method param value from request,param name:{}", methodParameterName);
             }
         }
+
+
+//        for (String methodParameterName : methodParameterNames) {
+//            if (!CollectionUtils.isEmpty(requestParamMap)) {
+//                Object param = requestParamMap.get(methodParameterName);
+//                collect.add(param);
+//            } else {
+//                log.info("not found method param value from request,param name:{}", methodParameterName);
+//            }
+//        }
         return collect.toArray(objects);
     }
 }

@@ -4,6 +4,7 @@ import io.github.annotion.EnableCombineRequest;
 import io.github.dto.UserDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -26,5 +27,13 @@ public class UserController {
     @GetMapping(path = "/fang")
     public UserDto getFang() {
         return new UserDto(2,"芳");
+    }
+
+
+    @EnableCombineRequest
+    @GetMapping(path = "/liang")
+    public UserDto getLing(@RequestParam(name="param")String  name,String age) {
+        log.info("name:{},age:{}",name,age);
+        return new UserDto(2,name);
     }
 }
