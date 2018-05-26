@@ -18,8 +18,10 @@
 
 ## 举例说明：
 
-* 为了安全控制，在支持组合接口的上面，加上 ``` @EnableCombineRequest ``` 注解。告诉 Spring 容器，这方法支持放在组合接口中，如果把不支持组合接口放到组合接口中去请求，会报``` IllegalArgumentException ```
+* 为了安全控制，在支持组合接口的方法上面，要加上 ``` @EnableCombineRequest ``` 注解。告诉 Spring 容器，这方法支持放在组合接口中，如果把不支持组合接口放到组合接口中去请求，会报``` IllegalArgumentException ```
 
+
+### 不带注解事例
 
 * 请求的 request
 ```json
@@ -61,6 +63,55 @@
 ]
 ```
 
+### 带 @RequestParam 注解例子
+
+* 请求的 request，其中处理 **[Get /liang]** 这个请求的方法中，使用了 ```(@RequestParam(name="userName",defaultValue = "明")String  name,Integer id)```
+
+```json
+[{
+	"method": "GET",
+	"requestId": "1111",
+	"param": {
+		"id": 11
+	},
+	"url": "/liang"
+}, {
+	"method": "GET",
+	"requestId": "222",
+	"param": {
+		"param": "亮",
+		"id": 12
+	},
+	"url": "/liang"
+}]
+```
+
+* 响应的 response
+
+``` 
+[
+  {
+    "requestId": "1111",
+    "url": "/liang",
+    "httpStatus": 200,
+    "entity": {
+      "id": 11,
+      "name": "明"
+    }
+  },
+  {
+    "requestId": "222",
+    "url": "/liang",
+    "httpStatus": 200,
+    "entity": {
+      "id": 12,
+      "name": "亮"
+    }
+  }
+]
+```
+
+
 ## TODO
 
-* 组合方法支持 @RequestParam 等注解
+ 组合方法支持 @PathVariable 等注解 

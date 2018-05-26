@@ -131,15 +131,13 @@ public class CombineRequestController {
                 Object result;
                 try {
                     result = ReflectionUtils.invokeMethod(method, object, args);
+                    responseItem.setEntity(result);
+                    responseItem.setHttpStatus(HttpStatus.OK.value());
                 } catch (IllegalArgumentException e) {
                     log.error("invoke method error method={},args={},exception msg={}", method, args, e.getMessage());
-                    responseItem.setEntity(null);
+                    responseItem.setEntity("bad request");
                     responseItem.setHttpStatus(HttpStatus.BAD_REQUEST.value());
-                    return;
                 }
-
-                responseItem.setEntity(result);
-                responseItem.setHttpStatus(HttpStatus.OK.value());
             }
             responseItems.add(responseItem);
         });
@@ -154,7 +152,7 @@ public class CombineRequestController {
     /**
      * @param method          处理请求的方法
      * @param requestParamMap 请求参数 Map
-     * @return 组装好顺序的，传给方法的值
+     * @return 组装好顺序，传给方法的值
      */
     private Object[] getArgs(Method method, Map<String, Object> requestParamMap) {
         DefaultParameterNameDiscoverer defaultParameterNameDiscoverer = new DefaultParameterNameDiscoverer();
@@ -176,7 +174,9 @@ public class CombineRequestController {
 
             Annotation[] paramAnns = methodParam.getParameterAnnotations();
             if (paramAnns.length != 0) {
+                //TODO foreach 遍历处理注解
                 Annotation paramAnn = paramAnns[0];
+
                 if (RequestParam.class.isInstance(paramAnn)) {
                     RequestParam requestParam = (RequestParam) paramAnn;
                     String paramName = requestParam.name();
@@ -188,9 +188,11 @@ public class CombineRequestController {
                         Assert.isTrue(param != null || defaultValue != null, paramName + "is require,but not found from request and not default value");
                     }
                     defaultValue = param == null ? defaultValue : param.toString();
-                    collect.add(param);
+                    collect.add(defaultValue);
 
-                    log.info("param has RequestParam Annotation,default value:{},get value from request:{}", defaultValue, param.toString());
+                    if(defaultValue == null) {
+                        log.warn("param has RequestParam Annotation,required = false,not default value,and not found from value request");
+                    }
                     continue;
                 }
             }
@@ -205,15 +207,6 @@ public class CombineRequestController {
             }
         }
 
-
-//        for (String methodParameterName : methodParameterNames) {
-//            if (!CollectionUtils.isEmpty(requestParamMap)) {
-//                Object param = requestParamMap.get(methodParameterName);
-//                collect.add(param);
-//            } else {
-//                log.info("not found method param value from request,param name:{}", methodParameterName);
-//            }
-//        }
         return collect.toArray(objects);
     }
 }
