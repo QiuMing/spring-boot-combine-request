@@ -51,6 +51,9 @@ public class CombineRequestController {
      */
     private static Map<String, HandlerMethod> requestItemHandlerMethodMap = new ConcurrentHashMap<>(8);
 
+    /**
+     * 是否支持处理 List<RequestItem>，即是否有找到所有[url+method] 的方法处理器，以及对应的方法中，是否加了 EnableCombineRequest 注解
+     */
     private static ThreadLocal<Boolean> supportAllRequestItems = new ThreadLocal<>();
 
     @PostMapping
@@ -68,7 +71,6 @@ public class CombineRequestController {
             RequestMethod requestMethod = RequestMethod.valueOf(strRequestMethod);
             String requestUrlAndMethod = url + strRequestMethod;
 
-
             if (requestItemHandlerMethodMap.get(requestUrlAndMethod) != null) {
                 if (!supportAllRequestItems.get()) {
                     return;
@@ -78,25 +80,25 @@ public class CombineRequestController {
             } else {
 
                 handlerMethods.forEach((requestMappingInfo, handlerMethod) -> {
-
                     if (!supportAllRequestItems.get()) {
                         return;
                     }
 
                     List<String> matchingPatterns = requestMappingInfo.getPatternsCondition().getMatchingPatterns(url);
-
                     Set<RequestMethod> methods = requestMappingInfo.getMethodsCondition().getMethods();
+
                     if (matchingPatterns.size() > 0 && methods.contains(requestMethod)) {
 
                         EnableCombineRequest enableCombineRequest = handlerMethod.getMethodAnnotation(EnableCombineRequest.class);
                         if (enableCombineRequest == null) {
-                            log.warn("not support combine request,url:{},method:{}", requestItem.getUrl(), requestItem.getMethod());
+                            log.warn("not support combine request,method:{},it's url:{}", requestItem.getMethod(),requestItem.getUrl());
                             supportAllRequestItems.set(Boolean.FALSE);
-
                         }
-
                         handlerMethodMap.put(requestItem, handlerMethod);
                         requestItemHandlerMethodMap.put(requestUrlAndMethod, handlerMethod);
+                    } else {
+                        supportAllRequestItems.set(Boolean.FALSE);
+                        log.warn("not support combine request,url:{},method:{}", requestItem.getUrl(), requestItem.getMethod());
                     }
                 });
             }
@@ -145,7 +147,7 @@ public class CombineRequestController {
     }
 
 
-    protected String parseDefaultValueAttribute(String value) {
+    private String parseDefaultValueAttribute(String value) {
         return (ValueConstants.DEFAULT_NONE.equals(value) ? null : value);
     }
 
@@ -194,6 +196,8 @@ public class CombineRequestController {
                         log.warn("param has RequestParam Annotation,required = false,not default value,and not found from value request");
                     }
                     continue;
+                } else if(PathVariable.class.isInstance(paramAnn)){
+                    PathVariable pathVariable = (PathVariable) paramAnn;
                 }
             }
 
