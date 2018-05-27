@@ -25,93 +25,63 @@
 
 * 请求的 request
 ```json
-[
-  {
-    "method": "GET",
-    "requestId": "111",
-    "url": "/ming"
-  },  {
-    "method": "GET",
-    "requestId": "222",
-    "url": "/fang"
-  }
-]
+[{"method":"GET","requestId":"111","url":"/ming"},{"method":"GET","requestId":"222","url":"/fang"}]
 ```
 
 * 响应的 response
 
 ```json
-[
-  {
-    "requestId": "222",
-    "url": "/fang",
-    "httpStatus": 200,
-    "entity": {
-      "id": 1,
-      "name": "芳"
-    }
-  },
-  {
-    "requestId": "111",
-    "url": "/ming",
-    "httpStatus": 200,
-    "entity": {
-      "id": 2,
-      "name": "明"
-    }
-  }
-]
+[{"requestId":"222","url":"/fang","httpStatus":200,"entity":{"id":1,"name":"芳"}},{"requestId":"111","url":"/ming","httpStatus":200,"entity":{"id":2,"name":"明"}}]
 ```
 
 ### 带 @RequestParam 注解例子
 
-* 请求的 request，其中处理 **[Get /liang]** 这个请求的方法中，使用了 ```(@RequestParam(name="userName",defaultValue = "明")String  name,Integer id)```
+* 处理方法
+
+``` 
+    @EnableCombineRequest
+    @GetMapping(path = "/liang")
+    public UserDto getLiang(@RequestParam(name="userName",defaultValue = "明")String  name,Integer id) {
+        log.info("name:{},age:{}",name,id);
+        return new UserDto(id,name);
+    }
+```
+
+* 请求的 request
 
 ```json
-[{
-	"method": "GET",
-	"requestId": "1111",
-	"param": {
-		"id": 11
-	},
-	"url": "/liang"
-}, {
-	"method": "GET",
-	"requestId": "222",
-	"param": {
-		"param": "亮",
-		"id": 12
-	},
-	"url": "/liang"
-}]
+[{"method":"GET","requestId":"1111","param":{"id":11},"url":"/liang"},{"method":"GET","requestId":"222","param":{"param":"亮","id":12},"url":"/liang"}]
 ```
 
 * 响应的 response
 
 ``` 
-[
-  {
-    "requestId": "1111",
-    "url": "/liang",
-    "httpStatus": 200,
-    "entity": {
-      "id": 11,
-      "name": "明"
-    }
-  },
-  {
-    "requestId": "222",
-    "url": "/liang",
-    "httpStatus": 200,
-    "entity": {
-      "id": 12,
-      "name": "亮"
-    }
-  }
-]
+[{"requestId":"1111","url":"/liang","httpStatus":200,"entity":{"id":11,"name":"明"}},{"requestId":"222","url":"/liang","httpStatus":200,"entity":{"id":12,"name":"亮"}}]
 ```
 
+### 带 @PathVariable 注解例子
+
+* 处理方法
+``` 
+    @EnableCombineRequest
+    @GetMapping(path = "/qiu/{id}")
+    public UserDto getQiu(@PathVariable(name="id")Integer id,@RequestParam(name="userName",defaultValue = "丘")String  name) {
+        log.info("name:{},age:{}",name,id);
+        return new UserDto(id,name);
+    }
+```
+
+* 请求例子 
+
+``` 
+[{"method":"GET","requestId":"111","url":"/qiu/11"},{"method":"GET","requestId":"222","param":{"userName":"秋"},"url":"/qiu/22"}]
+```
+
+* 响应例子
+``` 
+[{"requestId":"111","url":"/qiu/11","httpStatus":200,"entity":{"id":11,"name":"丘"}},{"requestId":"222","url":"/qiu/22","httpStatus":200,"entity":{"id":22,"name":"秋"}}]
+```
 
 ## TODO
 
- 组合方法支持 @PathVariable 等注解 
+细节重构，详细说明不支持的情况
