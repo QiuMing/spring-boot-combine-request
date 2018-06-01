@@ -34,11 +34,17 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author liaoming
  * @since 2017年06月15日
  */
-@Api(value = "组合接口") @Slf4j @RestController @RequestMapping("${combine.request.path}") public class CombineRequestController {
+@Api(value = "组合接口")
+@Slf4j
+@RestController
+@RequestMapping("${combine.request.path}")
+public class CombineRequestController {
 
-    @Resource private RequestMappingHandlerMapping requestMappingHandlerMapping;
+    @Resource
+    private RequestMappingHandlerMapping requestMappingHandlerMapping;
 
-    @Resource private ApplicationContext context;
+    @Resource
+    private ApplicationContext context;
 
     /**
      * 组合请求处理器缓存，key=url+method
@@ -52,102 +58,68 @@ import java.util.concurrent.ConcurrentHashMap;
     private static Map<String, RequestMappingInfo> requestItemRequestMappingInfoMap = new ConcurrentHashMap<>(
             8);
 
-    /**
-     * 是否支持处理 List<RequestItem>，即是否有找到所有[url+method] 的方法处理器，以及对应的方法中，是否加了 EnableCombineRequest 注解
-     */
-    private static ThreadLocal<Boolean> supportAllRequestItems = new ThreadLocal<>();
 
-    @PostMapping public ResponseEntity<List<ResponseItem>> combine(
+    @PostMapping
+    public ResponseEntity<List<ResponseItem>> combine(
             @RequestBody List<RequestItem> requestItems) {
         //获取所有方法处理器
-        Map<RequestMappingInfo, HandlerMethod> handlerMethods = requestMappingHandlerMapping
-                .getHandlerMethods();
+        Map<RequestMappingInfo, HandlerMethod> handlerMethods = requestMappingHandlerMapping.getHandlerMethods();
 
-        //此 map 存放当前请求，对应的方法处理器
-        Map<RequestItem, HandlerMethod> handlerMethodMap = new HashMap<>(requestItems.size());
+        //组合请求结果
+        List<ResponseItem> responseItems = new ArrayList<>(requestItems.size());
 
-        //此 map 存放当前请求，参数映射信息
-        Map<RequestItem, RequestMappingInfo> requestMappingInfoMap = new HashMap<>();
-
-        supportAllRequestItems.set(Boolean.TRUE);
-        requestItems.forEach(requestItem -> {
-            String url = requestItem.getUrl().startsWith("/") ?
-                    requestItem.getUrl() :
-                    "/" + requestItem.getUrl();
+        for (RequestItem requestItem : requestItems) {
+            String url = getRequestUrl(requestItem);
             String strRequestMethod = requestItem.getMethod().toUpperCase();
             RequestMethod requestMethod = RequestMethod.valueOf(strRequestMethod);
             String requestUrlAndMethod = url + strRequestMethod;
 
+            HandlerMethod requestItemHandlerMethod = null;
+            RequestMappingInfo requestItemMappingInfo = null;
+
             //先尝试从缓存中获取方法处理器和参数映射信息
             if (requestItemHandlerMethodMap.get(requestUrlAndMethod) != null
                     && requestItemRequestMappingInfoMap.get(requestUrlAndMethod) != null) {
-                if (!supportAllRequestItems.get()) {
-                    return;
-                }
-
-                handlerMethodMap
-                        .put(requestItem, requestItemHandlerMethodMap.get(requestUrlAndMethod));
-                requestMappingInfoMap.put(requestItem,
-                        requestItemRequestMappingInfoMap.get(requestUrlAndMethod));
-
+                requestItemMappingInfo = requestItemRequestMappingInfoMap.get(requestUrlAndMethod);
+                requestItemHandlerMethod = requestItemHandlerMethodMap.get(requestUrlAndMethod);
             } else {
-
-                handlerMethods.forEach((requestMappingInfo, handlerMethod) -> {
-                    if (!supportAllRequestItems.get()) {
-                        return;
-                    }
-                    requestMappingInfo.getPatternsCondition().getPatterns();
+                for (RequestMappingInfo requestMappingInfo : handlerMethods.keySet()) {
+                    HandlerMethod handlerMethod = handlerMethods.get(requestMappingInfo);
                     List<String> matchingPatterns = requestMappingInfo.getPatternsCondition()
                             .getMatchingPatterns(url);
                     Set<RequestMethod> methods = requestMappingInfo.getMethodsCondition()
                             .getMethods();
 
                     if (matchingPatterns.size() > 0 && methods.contains(requestMethod)) {
-
                         EnableCombineRequest enableCombineRequest = handlerMethod
                                 .getMethodAnnotation(EnableCombineRequest.class);
                         if (enableCombineRequest == null) {
                             log.warn("not support combine request,method:{},it's url:{}",
                                     requestItem.getMethod(), requestItem.getUrl());
-                            supportAllRequestItems.set(Boolean.FALSE);
+                            throw new IllegalArgumentException("exist not support request");
                         }
-                        handlerMethodMap.put(requestItem, handlerMethod);
-                        requestMappingInfoMap.put(requestItem, requestMappingInfo);
+                        requestItemHandlerMethod = handlerMethod;
+                        requestItemMappingInfo = requestMappingInfo;
 
-                        //设置缓存
-                        requestItemHandlerMethodMap.put(requestUrlAndMethod, handlerMethod);
-                        requestItemRequestMappingInfoMap
-                                .put(requestUrlAndMethod, requestMappingInfo);
-                        return;
+                        setCache(requestUrlAndMethod, requestMappingInfo, handlerMethod);
                     }
-                });
+                }
             }
-        });
 
-        if (!supportAllRequestItems.get()) {
-            throw new IllegalArgumentException("exist not support request");
-        }
-
-        List<ResponseItem> responseItems = new ArrayList<>(requestItems.size());
-
-        //通过反射调用获取执行方法的结果
-        requestItems.parallelStream().forEach(requestItem -> {
             ResponseItem responseItem = new ResponseItem();
             responseItem.setRequestId(requestItem.getRequestId());
             responseItem.setUrl(requestItem.getUrl());
 
-            HandlerMethod handlerMethod = handlerMethodMap.get(requestItem);
-            RequestMappingInfo requestMappingInfo = requestMappingInfoMap.get(requestItem);
-            if (null == handlerMethod) {
+            if (null == requestItemHandlerMethod) {
                 log.warn("not found handlerMethod for request url:{}", requestItem.getUrl());
                 responseItem.setHttpStatus(HttpStatus.NOT_FOUND.value());
             } else {
                 //方法所在类
-                Object object = context.getBean(handlerMethod.getBean().toString());
-                Method method = handlerMethod.getMethod();
+                Object object = context.getBean(requestItemHandlerMethod.getBean().toString());
+                Method method = requestItemHandlerMethod.getMethod();
 
                 //组装请求参数
-                Object[] args = getArgs(method, requestItem, requestMappingInfo);
+                Object[] args = getArgs(method, requestItem, requestItemMappingInfo);
 
                 Object result;
                 try {
@@ -162,8 +134,28 @@ import java.util.concurrent.ConcurrentHashMap;
                 }
             }
             responseItems.add(responseItem);
-        });
+        }
+
         return ResponseEntity.ok(responseItems);
+    }
+
+    private String getRequestUrl(RequestItem requestItem) {
+        return requestItem.getUrl().startsWith("/") ?
+                requestItem.getUrl() :
+                "/" + requestItem.getUrl();
+    }
+
+    /**
+     * 设置缓存
+     *
+     * @param requestUrlAndMethod 请求url 和 http method
+     * @param requestMappingInfo  请求的映射信息
+     * @param handlerMethod       请求的方法处理器
+     */
+    private void setCache(String requestUrlAndMethod, RequestMappingInfo requestMappingInfo, HandlerMethod handlerMethod) {
+        requestItemHandlerMethodMap.put(requestUrlAndMethod, handlerMethod);
+        requestItemRequestMappingInfoMap
+                .put(requestUrlAndMethod, requestMappingInfo);
     }
 
     private String parseDefaultValueAttribute(String value) {
@@ -171,23 +163,23 @@ import java.util.concurrent.ConcurrentHashMap;
     }
 
     /**
-     * @param method          处理请求的方法
-     * @param requestItem 请求Item  对象
+     * @param method             处理请求的方法
+     * @param requestItem        请求Item  对象
      * @param requestMappingInfo 处理请求  Item 方法，参数映射信息
      * @return 组装好顺序，传给方法的值
      */
     private Object[] getArgs(Method method, RequestItem requestItem,
-            RequestMappingInfo requestMappingInfo) {
+                             RequestMappingInfo requestMappingInfo) {
         Map<String, Object> requestParamMap = requestItem.getParam();
         String requestUrl = requestItem.getUrl();
         DefaultParameterNameDiscoverer defaultParameterNameDiscoverer = new DefaultParameterNameDiscoverer();
         String[] methodParameterNames = defaultParameterNameDiscoverer.getParameterNames(method);
 
-        if (methodParameterNames.length == 0)  {
+        if (methodParameterNames.length == 0) {
             log.debug("method：{} not need parameter", method.getName());
             return null;
         }
-        Object[] objects = new Object[] {};
+        Object[] objects = new Object[]{};
 
         LinkedList<Object> collect = new LinkedList<>();
 
@@ -229,7 +221,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
                     if (defaultValue == null) {
                         log.warn(
-                                "param has RequestParam Annotation,required = false,not default value,and not found from value request");
+                                "param has RequestParam Annotation,required = false,not default value,and not found value from request");
                     }
                     continue;
                 } else if (PathVariable.class.isInstance(paramAnn)) {
@@ -263,7 +255,7 @@ import java.util.concurrent.ConcurrentHashMap;
                 }
             }
 
-            //没有注解，直接按照字面量尝试取值
+            //处理没有注解，直接按照字面量尝试取值
             Object param = requestParamMap.get(methodParameterName);
             if (param != null) {
                 collect.add(param);

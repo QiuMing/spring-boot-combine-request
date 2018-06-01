@@ -12,23 +12,23 @@
 
 ## 实现
  
-* 通过 requestMappingHandlerMapping.getHandlerMethods() 方法，可以获取到所有的方法处理器，即为 ```Map<RequestMappingInfo, HandlerMethod> HandlerMethodMap = requestMappingHandlerMapping.getHandlerMethods();```
+* 通过 requestMappingHandlerMapping.getHandlerMethods() 方法，可以获取到所有的方法处理器，即为 **Map<RequestMappingInfo, HandlerMethod> HandlerMethodMap = requestMappingHandlerMapping.getHandlerMethods();**
 * 根据 requestItem 中的 url 和 method ，遍历 HandlerMethodMap ，可以唯一确定一个 HandlerMethod。
 * 获取到 HandlerMethod ，后面可以从里面取到该方法所在类，利用 ReflectionUtils.invokeMethod(method, object, args) 反射执行方法，获取结果。
 
 ## 举例说明：
 
-* 为了安全控制，在支持组合接口的方法上面，要加上 ``` @EnableCombineRequest ``` 注解。告诉 Spring 容器，这方法支持放在组合接口中，如果把不支持组合接口放到组合接口中去请求，会报``` IllegalArgumentException ```
+* 为了安全控制，在支持组合接口的方法上面，要加上 **@EnableCombineRequest** 注解。告诉 Spring 容器，这方法支持放在组合接口中，如果把不支持组合接口放到组合接口中去请求，会报 **IllegalArgumentException**
 
 
 ### 不带注解事例
 
-* 请求的 request
+请求的 request
 ```json
 [{"method":"GET","requestId":"111","url":"/ming"},{"method":"GET","requestId":"222","url":"/fang"}]
 ```
 
-* 响应的 response
+响应的 response
 
 ```json
 [{"requestId":"222","url":"/fang","httpStatus":200,"entity":{"id":1,"name":"芳"}},{"requestId":"111","url":"/ming","httpStatus":200,"entity":{"id":2,"name":"明"}}]
@@ -36,7 +36,7 @@
 
 ### 带 @RequestParam 注解例子
 
-* 处理方法
+处理方法
 
 ``` 
     @EnableCombineRequest
@@ -47,13 +47,13 @@
     }
 ```
 
-* 请求的 request
+请求的 request
 
 ```json
 [{"method":"GET","requestId":"1111","param":{"id":11},"url":"/liang"},{"method":"GET","requestId":"222","param":{"param":"亮","id":12},"url":"/liang"}]
 ```
 
-* 响应的 response
+响应的 response
 
 ``` 
 [{"requestId":"1111","url":"/liang","httpStatus":200,"entity":{"id":11,"name":"明"}},{"requestId":"222","url":"/liang","httpStatus":200,"entity":{"id":12,"name":"亮"}}]
