@@ -6,7 +6,6 @@ import io.github.pojo.ResponseItem;
 import io.swagger.annotations.Api;
 import lombok.extern.slf4j.Slf4j;
 
-import org.springframework.cglib.core.CollectionUtils;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.core.MethodParameter;
@@ -37,7 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Api(value = "组合接口")
 @Slf4j
 @RestController
-@RequestMapping("${combine.request.path}")
+@RequestMapping(value = {"${combine.request.path}"})
 public class CombineRequestController {
 
     @Resource
@@ -49,19 +48,16 @@ public class CombineRequestController {
     /**
      * 组合请求处理器缓存，key=url+method
      */
-    private static Map<String, HandlerMethod> requestItemHandlerMethodMap = new ConcurrentHashMap<>(
-            8);
+    private static Map<String, HandlerMethod> requestItemHandlerMethodMap = new ConcurrentHashMap<>(8);
 
     /**
      * 组合请求RequestMappingInfo缓存，key=url+method
      */
-    private static Map<String, RequestMappingInfo> requestItemRequestMappingInfoMap = new ConcurrentHashMap<>(
-            8);
+    private static Map<String, RequestMappingInfo> requestItemRequestMappingInfoMap = new ConcurrentHashMap<>(8);
 
 
     @PostMapping
-    public ResponseEntity<List<ResponseItem>> combine(
-            @RequestBody List<RequestItem> requestItems) {
+    public ResponseEntity<List<ResponseItem>> combine(@RequestBody List<RequestItem> requestItems) {
         //获取所有方法处理器
         Map<RequestMappingInfo, HandlerMethod> handlerMethods = requestMappingHandlerMapping.getHandlerMethods();
 
@@ -85,10 +81,8 @@ public class CombineRequestController {
             } else {
                 for (RequestMappingInfo requestMappingInfo : handlerMethods.keySet()) {
                     HandlerMethod handlerMethod = handlerMethods.get(requestMappingInfo);
-                    List<String> matchingPatterns = requestMappingInfo.getPatternsCondition()
-                            .getMatchingPatterns(url);
-                    Set<RequestMethod> methods = requestMappingInfo.getMethodsCondition()
-                            .getMethods();
+                    List<String> matchingPatterns = requestMappingInfo.getPatternsCondition().getMatchingPatterns(url);
+                    Set<RequestMethod> methods = requestMappingInfo.getMethodsCondition().getMethods();
 
                     if (matchingPatterns.size() > 0 && methods.contains(requestMethod)) {
                         EnableCombineRequest enableCombineRequest = handlerMethod
@@ -175,7 +169,7 @@ public class CombineRequestController {
         DefaultParameterNameDiscoverer defaultParameterNameDiscoverer = new DefaultParameterNameDiscoverer();
         String[] methodParameterNames = defaultParameterNameDiscoverer.getParameterNames(method);
 
-        if (methodParameterNames.length == 0) {
+        if (methodParameterNames == null || methodParameterNames.length == 0) {
             log.debug("method：{} not need parameter", method.getName());
             return null;
         }
@@ -190,69 +184,70 @@ public class CombineRequestController {
             MethodParameter methodParam = new SynthesizingMethodParameter(method, i);
             Class<?>[] parameterTypes = method.getParameterTypes();
 
-            Annotation[] paramAnns = methodParam.getParameterAnnotations();
-            if (paramAnns.length != 0) {
-                //TODO foreach 遍历处理注解
-                Annotation paramAnn = paramAnns[0];
+            Annotation[] parameterAnnotations = methodParam.getParameterAnnotations();
+            if (parameterAnnotations.length != 0) {
+                for (Annotation paramAnn : parameterAnnotations) {
+                    if (RequestParam.class.isInstance(paramAnn)) {
+                        RequestParam requestParam = (RequestParam) paramAnn;
+                        String paramName = requestParam.name();
+                        boolean required = requestParam.required();
+                        String defaultValue = parseDefaultValueAttribute(requestParam.defaultValue());
 
-                if (RequestParam.class.isInstance(paramAnn)) {
-                    RequestParam requestParam = (RequestParam) paramAnn;
-                    String paramName = requestParam.name();
-                    boolean required = requestParam.required();
-                    String defaultValue = parseDefaultValueAttribute(requestParam.defaultValue());
+                        if (requestParamMap == null) {
+                            if (required) {
+                                collect.add(defaultValue);
+                                continue;
+                            } else {
+                                throw new IllegalArgumentException(
+                                        "get param value fail,require param:" + requestParam.value());
+                            }
+                        }
+                        Object param = requestParamMap.get(paramName);
 
-                    if (requestParamMap == null) {
                         if (required) {
-                            collect.add(defaultValue);
-                            continue;
-                        } else {
-                            throw new IllegalArgumentException(
-                                    "get param value fail,require param:" + requestParam.value());
+                            Assert.isTrue(param != null || defaultValue != null, paramName
+                                    + "is require,but not found from request and not default value");
                         }
-                    }
-                    Object param = requestParamMap.get(paramName);
+                        defaultValue = param == null ? defaultValue : param.toString();
+                        collect.add(defaultValue);
 
-                    if (required) {
-                        Assert.isTrue(param != null || defaultValue != null, paramName
-                                + "is require,but not found from request and not default value");
-                    }
-                    defaultValue = param == null ? defaultValue : param.toString();
-                    collect.add(defaultValue);
-
-                    if (defaultValue == null) {
-                        log.warn(
-                                "param has RequestParam Annotation,required = false,not default value,and not found value from request");
-                    }
-                    continue;
-                } else if (PathVariable.class.isInstance(paramAnn)) {
-                    PathVariable pathVariable = (PathVariable) paramAnn;
-
-                    String bestPattern;
-                    Map<String, String> uriVariables;
-                    Map<String, String> decodedUriVariables;
-
-                    Set<String> patterns = requestMappingInfo.getPatternsCondition().getPatterns();
-                    if (patterns.isEmpty()) {
-                        log.info("pattern is empty");
-                    } else {
-                        bestPattern = patterns.iterator().next();
-                        uriVariables = new AntPathMatcher()
-                                .extractUriTemplateVariables(bestPattern, requestUrl);
-                        Class<?> parameterType = parameterTypes[i];
-                        String pathVariableValue = uriVariables.get(pathVariable.value());
-                        Object value;
-                        if (parameterType == Integer.class) {
-                            value = Integer.valueOf(pathVariableValue);
-                        } else if (parameterType == Long.class) {
-                            value = Long.valueOf(pathVariableValue);
-                        } else {
-                            value = pathVariableValue;
+                        if (defaultValue == null) {
+                            log.warn(
+                                    "param has RequestParam Annotation,required = false,not default value,and not found value from request");
                         }
-                        collect.add(value);
                         continue;
-                        //decodedUriVariables = getUrlPathHelper().decodePathVariables(request, uriVariables);
+                    } else if (PathVariable.class.isInstance(paramAnn)) {
+                        PathVariable pathVariable = (PathVariable) paramAnn;
+
+                        String bestPattern;
+                        Map<String, String> uriVariables;
+
+                        Set<String> patterns = requestMappingInfo.getPatternsCondition().getPatterns();
+                        if (patterns.isEmpty()) {
+                            log.info("pattern is empty");
+                        } else {
+                            bestPattern = patterns.iterator().next();
+                            uriVariables = new AntPathMatcher()
+                                    .extractUriTemplateVariables(bestPattern, requestUrl);
+                            Class<?> parameterType = parameterTypes[i];
+                            String pathVariableValue = uriVariables.get(pathVariable.value());
+                            Object value;
+                            if (parameterType == Integer.class) {
+                                value = Integer.valueOf(pathVariableValue);
+                            } else if (parameterType == Long.class) {
+                                value = Long.valueOf(pathVariableValue);
+                            } else {
+                                value = pathVariableValue;
+                            }
+                            collect.add(value);
+                            continue;
+                        }
                     }
                 }
+            }
+
+            if(requestParamMap == null){
+                return collect.toArray(objects);
             }
 
             //处理没有注解，直接按照字面量尝试取值

@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
     @EnableCombineRequest
-    @GetMapping(path = "/ming")
+    @GetMapping(value ={ "/ming","/bb"})
     public UserDto getMing() {
         return new UserDto(1,"明");
     }
